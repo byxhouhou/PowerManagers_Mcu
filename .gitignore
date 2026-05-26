@@ -1,0 +1,10 @@
+tools/w64devkit/
+tools/*.exe
+tests/*.exe
+*.o
+*.obj
+*.elf
+*.map
+*.bin
+*.hex
+*.log
