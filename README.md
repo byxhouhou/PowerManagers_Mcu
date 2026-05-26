@@ -100,6 +100,41 @@ Register `PowerManager_RegisterStateSyncCallback()` to synchronize the current p
 - `POWER_STATE_SYNC_PERIODIC`：每 `state_sync_period_cycles` 个状态机周期同步一次，默认 `10`。  
   Synchronized every `state_sync_period_cycles` state-machine cycles, default `10`.
 
+## 关键日志 / Key Logs
+
+日志默认编译关闭，避免 MCU 固件默认引入 `stdio`、格式化代码和额外 ROM/RAM 开销。需要调试时打开编译宏，并配置运行时回调。  
+Logging is compiled out by default to avoid pulling `stdio`, formatting code, and extra ROM/RAM into MCU firmware. Enable the compile-time macro and configure the runtime callback for debugging.
+
+```c
+#define POWER_MANAGER_LOG_ENABLED 1
+```
+
+```c
+static void AppPowerLog(const char *message)
+{
+    /* Route to UART, RTT, CAN diagnostics, or platform logger. */
+}
+
+PowerManagerConfig_t cfg = {
+    .log_enabled = true,
+    .log_callback = AppPowerLog,
+};
+```
+
+可配置项 / Configurable items:
+
+- `POWER_MANAGER_LOG_ENABLED`：编译开关，默认 `0`。  
+  Compile-time switch, default `0`.
+- `POWER_MANAGER_LOG_BUFFER_SIZE`：单条日志缓冲区长度，默认 `128`。  
+  Per-log message buffer size, default `128`.
+- `PowerManagerConfig_t.log_enabled`：运行时开关。  
+  Runtime switch.
+- `PowerManagerConfig_t.log_callback`：日志输出回调。  
+  Log output callback.
+
+当前关键日志包括：初始化、状态迁移、迁移原因、电压事件、IO 脉冲请求、关机 ready 更新、30 秒强制关机、外设 resume/suspend。  
+Current key logs include initialization, state transition, transition reason, voltage event, IO pulse request, shutdown ready update, 30-second forced shutdown, and peripheral resume/suspend.
+
 ## 关机确认 / Shutdown Ready
 
 `SHUTDOWN_PREPARE` 可以等待各业务模块完成关机动作后再进入 `SLEEP`。配置 `shutdown_required_mask` 后，各模块完成保存数据、停止通信、关闭驱动等动作时上报 ready。  

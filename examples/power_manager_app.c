@@ -98,6 +98,16 @@ static void on_power_state_sync(PowerStateSyncReason_t reason,
      */
 }
 
+static void on_power_log(const char *message)
+{
+    (void)message;
+
+    /*
+     * Route to UART, RTT, CAN diagnostics, or platform logger here.
+     * Enable with POWER_MANAGER_LOG_ENABLED=1 and config.log_enabled=true.
+     */
+}
+
 void PowerManager_AppInit(void)
 {
     PowerManagerConfig_t config =
@@ -113,6 +123,8 @@ void PowerManager_AppInit(void)
         .peripheral_pm_enabled = true,
         .peripherals = s_peripherals,
         .peripheral_count = sizeof(s_peripherals) / sizeof(s_peripherals[0]),
+        .log_enabled = false,
+        .log_callback = on_power_log,
     };
     PowerVoltageMonitorConfig_t voltage_config =
     {

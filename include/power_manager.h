@@ -69,6 +69,18 @@ typedef enum
 #define POWER_MANAGER_SHUTDOWN_FORCE_TIMEOUT_TICKS pdMS_TO_TICKS(30000)
 #endif
 
+/* 日志编译开关。默认不编入格式化日志代码，减少 ROM/RAM 和 printf 依赖。 */
+#ifndef POWER_MANAGER_LOG_ENABLED
+#define POWER_MANAGER_LOG_ENABLED 0
+#endif
+
+/* 单条日志缓冲区长度，仅在 POWER_MANAGER_LOG_ENABLED != 0 时使用。 */
+#ifndef POWER_MANAGER_LOG_BUFFER_SIZE
+#define POWER_MANAGER_LOG_BUFFER_SIZE 128
+#endif
+
+typedef void (*PowerLogCallback_t)(const char *message);
+
 /* 外设类型只表达类别，具体驱动动作由 resume/suspend 回调移植实现。 */
 typedef enum
 {
@@ -145,6 +157,9 @@ typedef struct
     bool peripheral_pm_enabled;
     const PowerPeripheralConfig_t *peripherals;
     uint8_t peripheral_count;
+    /* 日志运行时开关。需同时打开 POWER_MANAGER_LOG_ENABLED 且设置 log_callback 才会输出。 */
+    bool log_enabled;
+    PowerLogCallback_t log_callback;
 } PowerManagerConfig_t;
 
 /* 对外同步的状态快照。回调中不要长期保存指针，应按值拷贝需要的数据。 */

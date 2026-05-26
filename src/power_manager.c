@@ -1,6 +1,10 @@
 #include "power_manager.h"
 #include "power_manager_port.h"
 
+#if POWER_MANAGER_LOG_ENABLED
+#include <stdarg.h>
+#include <stdio.h>
+#endif
 #include <string.h>
 #include "semphr.h"
 #include "task.h"
@@ -73,7 +77,29 @@ static const PowerManagerConfig_t s_default_config =
     .peripheral_pm_enabled = false,
     .peripherals = NULL,
     .peripheral_count = 0,
+    .log_enabled = false,
+    .log_callback = NULL,
 };
+
+static void power_log(const char *format, ...)
+{
+#if POWER_MANAGER_LOG_ENABLED
+    char buffer[POWER_MANAGER_LOG_BUFFER_SIZE];
+    va_list args;
+
+    if (!s_config.log_enabled || (s_config.log_callback == NULL))
+    {
+        return;
+    }
+
+    va_start(args, format);
+    (void)vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    s_config.log_callback(buffer);
+#else
+    (void)format;
+#endif
+}
 
 static void sync_power_state(PowerStateSyncReason_t reason,
                              const PowerManagerSnapshot_t *snapshot)
@@ -133,6 +159,18 @@ static BaseType_t apply_one_peripheral_state(uint8_t index, PowerState_t state)
         if (result == pdPASS)
         {
             s_peripheral_states[index] = POWER_PERIPHERAL_STATE_ACTIVE;
+            power_log("peripheral resume: id=%u name=%s type=%s state=%s",
+                      peripheral->id,
+                      peripheral->name != NULL ? peripheral->name : "NULL",
+                      PowerManager_PeripheralTypeName(peripheral->type),
+                      PowerManager_StateName(state));
+        }
+        else
+        {
+            power_log("peripheral resume failed: id=%u name=%s state=%s",
+                      peripheral->id,
+                      peripheral->name != NULL ? peripheral->name : "NULL",
+                      PowerManager_StateName(state));
         }
     }
     else if (!should_be_active &&
@@ -146,6 +184,18 @@ static BaseType_t apply_one_peripheral_state(uint8_t index, PowerState_t state)
         if (result == pdPASS)
         {
             s_peripheral_states[index] = POWER_PERIPHERAL_STATE_SUSPENDED;
+            power_log("peripheral suspend: id=%u name=%s type=%s state=%s",
+                      peripheral->id,
+                      peripheral->name != NULL ? peripheral->name : "NULL",
+                      PowerManager_PeripheralTypeName(peripheral->type),
+                      PowerManager_StateName(state));
+        }
+        else
+        {
+            power_log("peripheral suspend failed: id=%u name=%s state=%s",
+                      peripheral->id,
+                      peripheral->name != NULL ? peripheral->name : "NULL",
+                      PowerManager_StateName(state));
         }
     }
 
@@ -204,6 +254,14 @@ static void set_state(PowerState_t next_state, PowerTransitionReason_t reason)
 
     apply_state_outputs(next_state);
     (void)PowerManager_ApplyPeripheralState(next_state);
+
+    power_log("state transition: %s -> %s reason=%s vbatt=%umV kl30=%u kl15=%u",
+              PowerManager_StateName(old_state),
+              PowerManager_StateName(next_state),
+              PowerManager_TransitionReasonName(reason),
+              (unsigned int)callback_snapshot.vbatt_mv,
+              callback_snapshot.kl30_present ? 1U : 0U,
+              callback_snapshot.kl15_on ? 1U : 0U);
 
     if (next_state == POWER_STATE_SLEEP)
     {
@@ -345,6 +403,9 @@ static void run_state_machine(void)
         else if (elapsed >= POWER_MANAGER_SHUTDOWN_FORCE_TIMEOUT_TICKS)
         {
             /* 关机动作超时仍未完成时强制进入休眠，避免系统长时间停留在关机准备态。 */
+            power_log("shutdown timeout force: elapsed=%lu pending=0x%08lx",
+                      (unsigned long)elapsed,
+                      (unsigned long)PowerManager_GetShutdownPendingMask());
             set_state(POWER_STATE_SLEEP, POWER_TRANSITION_REASON_SHUTDOWN_TIMEOUT_FORCE);
         }
         break;
@@ -364,6 +425,10 @@ static void update_voltage_snapshot(const PowerEvent_t *event)
     s_snapshot.over_voltage = event->voltage_state == POWER_VOLTAGE_STATE_OVER_VOLTAGE;
     s_snapshot.under_voltage = event->voltage_state == POWER_VOLTAGE_STATE_SHUTDOWN_LOW;
     xSemaphoreGive(s_lock);
+
+    power_log("voltage update: state=%s mv=%u",
+              PowerManager_VoltageStateName(event->voltage_state),
+              (unsigned int)event->voltage_mv);
 }
 
 static void pulse_restore_timer_callback(TimerHandle_t timer)
@@ -441,6 +506,10 @@ static void handle_event(const PowerEvent_t *event)
         break;
     case POWER_EVENT_IO_PULSE:
         (void)start_pulse(event->io, event->active_level, event->duration_ticks);
+        power_log("io pulse request: io=%u level=%u duration=%lu",
+                  (unsigned int)event->io,
+                  (unsigned int)event->active_level,
+                  (unsigned long)event->duration_ticks);
         break;
     case POWER_EVENT_VOLTAGE_CHANGED:
         update_voltage_snapshot(event);
@@ -551,6 +620,12 @@ BaseType_t PowerManager_Init(const PowerManagerConfig_t *config)
     {
         s_peripheral_states[i] = POWER_PERIPHERAL_STATE_SUSPENDED;
     }
+    power_log("power manager init: state_period=%lu shutdown_prepare=%lu sync_cycles=%u required=0x%08lx peripheral_pm=%u",
+              (unsigned long)s_config.state_machine_period_ticks,
+              (unsigned long)s_config.shutdown_prepare_ticks,
+              (unsigned int)s_config.state_sync_period_cycles,
+              (unsigned long)s_config.shutdown_required_mask,
+              s_config.peripheral_pm_enabled ? 1U : 0U);
     return pdPASS;
 }
 
@@ -612,6 +687,9 @@ void PowerManager_RegisterStateSyncCallback(PowerStateSyncCallback_t callback)
 
 void PowerManager_SetShutdownReady(uint32_t module_mask, bool ready)
 {
+    uint32_t ready_mask;
+    uint32_t required_mask;
+
     if (s_lock == NULL)
     {
         return;
@@ -626,7 +704,15 @@ void PowerManager_SetShutdownReady(uint32_t module_mask, bool ready)
     {
         s_snapshot.shutdown_ready_mask &= ~module_mask;
     }
+    ready_mask = s_snapshot.shutdown_ready_mask;
+    required_mask = s_snapshot.shutdown_required_mask;
     xSemaphoreGive(s_lock);
+
+    power_log("shutdown ready update: module=0x%08lx ready=%u ready_mask=0x%08lx required=0x%08lx",
+              (unsigned long)module_mask,
+              ready ? 1U : 0U,
+              (unsigned long)ready_mask,
+              (unsigned long)required_mask);
 }
 
 bool PowerManager_IsShutdownReady(void)
