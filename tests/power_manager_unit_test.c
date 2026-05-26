@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,9 @@ static uint32_t g_prepare_shutdown_count;
 static uint32_t g_resume_count;
 static uint32_t g_suspend_count;
 static int g_failures;
+static int g_current_test_failures;
+static int g_total_tests;
+static int g_passed_tests;
 
 /*
  * Unit tests include the implementation file to exercise static state-machine
@@ -27,9 +31,31 @@ static void test_assert(bool ok, const char *expr, int line)
 {
     if (!ok)
     {
-        (void)expr;
-        (void)line;
+        printf("    FAIL line %d: %s\n", line, expr);
         g_failures++;
+        g_current_test_failures++;
+    }
+}
+
+static void run_test(const char *name, void (*test_func)(void))
+{
+    int failures_before = g_failures;
+
+    g_total_tests++;
+    g_current_test_failures = 0;
+    printf("[RUN ] %s\n", name);
+    test_func();
+
+    if (g_failures == failures_before)
+    {
+        g_passed_tests++;
+        printf("[PASS] %s\n", name);
+    }
+    else
+    {
+        printf("[FAIL] %s (%d failed assertion(s))\n",
+               name,
+               g_current_test_failures);
     }
 }
 
@@ -404,11 +430,36 @@ static void test_peripheral_pm_resume_and_suspend(void)
 
 int main(void)
 {
-    test_sleep_to_wakeup_to_work();
-    test_work_to_shutdown_and_sleep_without_required_modules();
-    test_shutdown_waits_for_required_modules();
-    test_shutdown_timeout_forces_sleep();
-    test_peripheral_pm_resume_and_suspend();
+    printf("PowerManager MCU unit tests\n");
+    printf("===========================\n");
+
+    run_test("SLEEP -> WAKEUP -> WORK normal transition",
+             test_sleep_to_wakeup_to_work);
+    run_test("WORK -> SHUTDOWN_PREPARE -> SLEEP without required modules",
+             test_work_to_shutdown_and_sleep_without_required_modules);
+    run_test("SHUTDOWN_PREPARE waits for required module ready flags",
+             test_shutdown_waits_for_required_modules);
+    run_test("SHUTDOWN_PREPARE timeout forces SLEEP",
+             test_shutdown_timeout_forces_sleep);
+    run_test("Peripheral PM resume in WORK and suspend in SLEEP",
+             test_peripheral_pm_resume_and_suspend);
+
+    printf("===========================\n");
+    printf("Test summary: %d/%d passed, %d failed assertion(s)\n",
+           g_passed_tests,
+           g_total_tests,
+           g_failures);
+
+    if (g_failures == 0)
+    {
+        printf("Result: ALL TESTS PASSED\n");
+        printf("结果: 全部测试通过\n");
+    }
+    else
+    {
+        printf("Result: TESTS FAILED\n");
+        printf("结果: 存在测试失败\n");
+    }
 
     return g_failures;
 }

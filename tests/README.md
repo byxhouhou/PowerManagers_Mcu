@@ -49,6 +49,9 @@ echo $?
 返回值为 `0` 表示全部通过。  
 Exit code `0` means all tests passed.
 
+运行时会打印每个测试项的 `[RUN]` / `[PASS]` / `[FAIL]`，最后输出汇总和“全部测试通过”。  
+At runtime it prints `[RUN]` / `[PASS]` / `[FAIL]` for each case, followed by a summary and an all-passed message.
+
 ## Windows portable GCC
 
 本工作区可使用 `tools\w64devkit\bin\gcc.exe`。在 Windows cmd 中可先运行：
