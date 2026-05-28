@@ -74,6 +74,9 @@ static const PowerManagerConfig_t s_default_config =
     .state_machine_period_ticks = pdMS_TO_TICKS(50),
     .state_sync_period_cycles = 10,
     .shutdown_required_mask = 0U,
+    .io_sequence_enabled = false,
+    .io_sequence_steps = NULL,
+    .io_sequence_step_count = 0,
     .peripheral_pm_enabled = false,
     .peripherals = NULL,
     .peripheral_count = 0,
@@ -110,7 +113,7 @@ static void sync_power_state(PowerStateSyncReason_t reason,
     }
 }
 
-static void apply_state_outputs(PowerState_t state)
+static void apply_state_output_table(PowerState_t state)
 {
     for (uint32_t io = 0; io < POWER_IO_COUNT; io++)
     {
@@ -119,6 +122,64 @@ static void apply_state_outputs(PowerState_t state)
         {
             PowerPort_WriteIo((PowerIoId_t)io, level);
         }
+    }
+}
+
+static bool has_state_output_sequence(PowerState_t state)
+{
+    if (!s_config.io_sequence_enabled || (s_config.io_sequence_steps == NULL))
+    {
+        return false;
+    }
+
+    for (uint8_t i = 0; i < s_config.io_sequence_step_count; i++)
+    {
+        if (s_config.io_sequence_steps[i].state == state)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static void apply_state_output_sequence(PowerState_t state)
+{
+    for (uint8_t i = 0; i < s_config.io_sequence_step_count; i++)
+    {
+        const PowerIoSequenceStep_t *step = &s_config.io_sequence_steps[i];
+
+        if (step->state != state)
+        {
+            continue;
+        }
+
+        if (step->delay_before_ticks > 0U)
+        {
+            vTaskDelay(step->delay_before_ticks);
+        }
+
+        if ((step->io < POWER_IO_COUNT) && (step->level != POWER_IO_LEVEL_KEEP))
+        {
+            PowerPort_WriteIo(step->io, step->level);
+            power_log("io sequence: state=%s delay=%lu io=%u level=%u",
+                      PowerManager_StateName(state),
+                      (unsigned long)step->delay_before_ticks,
+                      (unsigned int)step->io,
+                      (unsigned int)step->level);
+        }
+    }
+}
+
+static void apply_state_outputs(PowerState_t state)
+{
+    if (has_state_output_sequence(state))
+    {
+        apply_state_output_sequence(state);
+    }
+    else
+    {
+        apply_state_output_table(state);
     }
 }
 
@@ -579,6 +640,12 @@ BaseType_t PowerManager_Init(const PowerManagerConfig_t *config)
     if (s_config.state_sync_period_cycles == 0)
     {
         s_config.state_sync_period_cycles = s_default_config.state_sync_period_cycles;
+    }
+    if (s_config.io_sequence_enabled &&
+        (s_config.io_sequence_step_count > 0U) &&
+        (s_config.io_sequence_steps == NULL))
+    {
+        return pdFAIL;
     }
     if (!is_peripheral_count_valid())
     {

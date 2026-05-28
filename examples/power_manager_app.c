@@ -71,6 +71,82 @@ static const PowerPeripheralConfig_t s_peripherals[] =
     },
 };
 
+static const PowerIoSequenceStep_t s_io_sequence[] =
+{
+    {
+        .state = POWER_STATE_SLEEP,
+        .delay_before_ticks = 0,
+        .io = POWER_IO_MAIN_RELAY,
+        .level = POWER_IO_LEVEL_LOW,
+    },
+    {
+        .state = POWER_STATE_SLEEP,
+        .delay_before_ticks = pdMS_TO_TICKS(5),
+        .io = POWER_IO_SENSOR_5V_EN,
+        .level = POWER_IO_LEVEL_LOW,
+    },
+    {
+        .state = POWER_STATE_SLEEP,
+        .delay_before_ticks = pdMS_TO_TICKS(5),
+        .io = POWER_IO_CAN_STB,
+        .level = POWER_IO_LEVEL_HIGH,
+    },
+    {
+        .state = POWER_STATE_WAKEUP,
+        .delay_before_ticks = 0,
+        .io = POWER_IO_MCU_HOLD,
+        .level = POWER_IO_LEVEL_HIGH,
+    },
+    {
+        .state = POWER_STATE_WAKEUP,
+        .delay_before_ticks = pdMS_TO_TICKS(10),
+        .io = POWER_IO_SENSOR_5V_EN,
+        .level = POWER_IO_LEVEL_HIGH,
+    },
+    {
+        .state = POWER_STATE_WAKEUP,
+        .delay_before_ticks = pdMS_TO_TICKS(20),
+        .io = POWER_IO_CAN_STB,
+        .level = POWER_IO_LEVEL_LOW,
+    },
+    {
+        .state = POWER_STATE_WORK,
+        .delay_before_ticks = 0,
+        .io = POWER_IO_SENSOR_5V_EN,
+        .level = POWER_IO_LEVEL_HIGH,
+    },
+    {
+        .state = POWER_STATE_WORK,
+        .delay_before_ticks = pdMS_TO_TICKS(20),
+        .io = POWER_IO_CAN_STB,
+        .level = POWER_IO_LEVEL_LOW,
+    },
+    {
+        .state = POWER_STATE_WORK,
+        .delay_before_ticks = pdMS_TO_TICKS(50),
+        .io = POWER_IO_MAIN_RELAY,
+        .level = POWER_IO_LEVEL_HIGH,
+    },
+    {
+        .state = POWER_STATE_SHUTDOWN_PREPARE,
+        .delay_before_ticks = 0,
+        .io = POWER_IO_MAIN_RELAY,
+        .level = POWER_IO_LEVEL_LOW,
+    },
+    {
+        .state = POWER_STATE_SHUTDOWN_PREPARE,
+        .delay_before_ticks = pdMS_TO_TICKS(20),
+        .io = POWER_IO_CAN_STB,
+        .level = POWER_IO_LEVEL_HIGH,
+    },
+    {
+        .state = POWER_STATE_SHUTDOWN_PREPARE,
+        .delay_before_ticks = pdMS_TO_TICKS(50),
+        .io = POWER_IO_SENSOR_5V_EN,
+        .level = POWER_IO_LEVEL_LOW,
+    },
+};
+
 static void on_power_state_changed(PowerState_t old_state,
                                    PowerState_t new_state,
                                    const PowerManagerSnapshot_t *snapshot)
@@ -120,6 +196,9 @@ void PowerManager_AppInit(void)
                                   POWER_SHUTDOWN_MODULE_NVM |
                                   POWER_SHUTDOWN_MODULE_DIAG |
                                   POWER_SHUTDOWN_MODULE_APP,
+        .io_sequence_enabled = true,
+        .io_sequence_steps = s_io_sequence,
+        .io_sequence_step_count = sizeof(s_io_sequence) / sizeof(s_io_sequence[0]),
         .peripheral_pm_enabled = true,
         .peripherals = s_peripherals,
         .peripheral_count = sizeof(s_peripherals) / sizeof(s_peripherals[0]),

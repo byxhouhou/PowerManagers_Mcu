@@ -36,6 +36,14 @@ typedef enum
     POWER_IO_LEVEL_KEEP = 2,
 } PowerIoLevel_t;
 
+typedef struct
+{
+    PowerState_t state;
+    TickType_t delay_before_ticks;
+    PowerIoId_t io;
+    PowerIoLevel_t level;
+} PowerIoSequenceStep_t;
+
 /* 电压监控任务输出的稳定电压状态，状态机只消费这些状态，不直接处理 ADC 原始值。 */
 typedef enum
 {
@@ -153,6 +161,9 @@ typedef struct
     TickType_t state_machine_period_ticks;
     uint8_t state_sync_period_cycles;
     uint32_t shutdown_required_mask;
+    bool io_sequence_enabled;
+    const PowerIoSequenceStep_t *io_sequence_steps;
+    uint8_t io_sequence_step_count;
     /* 外设电源管理总开关；关闭时不会调用任何外设 resume/suspend。 */
     bool peripheral_pm_enabled;
     const PowerPeripheralConfig_t *peripherals;

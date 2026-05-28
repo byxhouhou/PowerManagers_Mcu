@@ -14,6 +14,7 @@ static uint32_t g_prepare_sleep_count;
 static uint32_t g_prepare_shutdown_count;
 static uint32_t g_resume_count;
 static uint32_t g_suspend_count;
+static uint32_t g_io_write_count;
 static int g_failures;
 static int g_current_test_failures;
 static int g_total_tests;
@@ -207,6 +208,7 @@ void PowerPort_WriteIo(PowerIoId_t io, PowerIoLevel_t level)
 {
     (void)io;
     (void)level;
+    g_io_write_count++;
 }
 
 PowerIoLevel_t PowerPort_ReadIo(PowerIoId_t io)
@@ -263,6 +265,7 @@ static void reset_runtime(void)
     g_prepare_shutdown_count = 0;
     g_resume_count = 0;
     g_suspend_count = 0;
+    g_io_write_count = 0;
 }
 
 static void init_power_manager(uint32_t shutdown_required_mask)
@@ -428,6 +431,46 @@ static void test_peripheral_pm_resume_and_suspend(void)
     TEST_ASSERT(PowerManager_GetPeripheralState(1) == POWER_PERIPHERAL_STATE_SUSPENDED);
 }
 
+static void test_io_sequence_applies_ordered_delays(void)
+{
+    static const PowerIoSequenceStep_t sequence[] =
+    {
+        {
+            .state = POWER_STATE_WAKEUP,
+            .delay_before_ticks = pdMS_TO_TICKS(5),
+            .io = POWER_IO_SENSOR_5V_EN,
+            .level = POWER_IO_LEVEL_HIGH,
+        },
+        {
+            .state = POWER_STATE_WAKEUP,
+            .delay_before_ticks = pdMS_TO_TICKS(7),
+            .io = POWER_IO_CAN_STB,
+            .level = POWER_IO_LEVEL_LOW,
+        },
+    };
+    PowerManagerConfig_t config =
+    {
+        .wakeup_min_ticks = pdMS_TO_TICKS(500),
+        .shutdown_prepare_ticks = pdMS_TO_TICKS(2000),
+        .state_machine_period_ticks = pdMS_TO_TICKS(50),
+        .state_sync_period_cycles = 10,
+        .shutdown_required_mask = 0U,
+        .io_sequence_enabled = true,
+        .io_sequence_steps = sequence,
+        .io_sequence_step_count = 2,
+        .peripheral_pm_enabled = false,
+        .peripherals = NULL,
+        .peripheral_count = 0,
+    };
+
+    reset_runtime();
+    TEST_ASSERT(PowerManager_Init(&config) == pdPASS);
+
+    force_state(POWER_EVENT_FORCE_WAKEUP);
+    TEST_ASSERT(g_io_write_count == 2U);
+    TEST_ASSERT(g_tick == pdMS_TO_TICKS(12));
+}
+
 int main(void)
 {
     printf("PowerManager MCU unit tests\n");
@@ -443,6 +486,8 @@ int main(void)
              test_shutdown_timeout_forces_sleep);
     run_test("Peripheral PM resume in WORK and suspend in SLEEP",
              test_peripheral_pm_resume_and_suspend);
+    run_test("IO sequence applies ordered delays",
+             test_io_sequence_applies_ordered_delays);
 
     printf("===========================\n");
     printf("Test summary: %d/%d passed, %d failed assertion(s)\n",

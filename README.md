@@ -90,6 +90,58 @@ The manager can pulse a specific IO and restore its previous level automatically
                            pdMS_TO_TICKS(10));
 ```
 
+## 上下电时序 / Power Sequencing
+
+当前项目已经有“状态 IO 表”，也就是每个电源状态对应一组最终 IO 电平。它可以保证状态切换后的最终输出正确，但所有 IO 是一次性写入，不表达先后顺序。  
+The project already has a state-to-IO table. It guarantees the final IO levels after a state transition, but it writes all IOs at once and does not express ordering.
+
+如果车载项目需要模拟或实现上下电时序，可以打开 `io_sequence_enabled` 并配置 `PowerIoSequenceStep_t` 表。状态机切换状态时会按表中步骤执行：先等待 `delay_before_ticks`，再写指定 IO。  
+For automotive-style power-up/down sequencing, enable `io_sequence_enabled` and configure a `PowerIoSequenceStep_t` table. On state transition, the state machine executes steps in order: wait `delay_before_ticks`, then write the selected IO.
+
+```c
+static const PowerIoSequenceStep_t app_io_sequence[] = {
+    {
+        .state = POWER_STATE_WAKEUP,
+        .delay_before_ticks = 0,
+        .io = POWER_IO_MCU_HOLD,
+        .level = POWER_IO_LEVEL_HIGH,
+    },
+    {
+        .state = POWER_STATE_WAKEUP,
+        .delay_before_ticks = pdMS_TO_TICKS(10),
+        .io = POWER_IO_SENSOR_5V_EN,
+        .level = POWER_IO_LEVEL_HIGH,
+    },
+    {
+        .state = POWER_STATE_WAKEUP,
+        .delay_before_ticks = pdMS_TO_TICKS(20),
+        .io = POWER_IO_CAN_STB,
+        .level = POWER_IO_LEVEL_LOW,
+    },
+};
+
+PowerManagerConfig_t cfg = {
+    .io_sequence_enabled = true,
+    .io_sequence_steps = app_io_sequence,
+    .io_sequence_step_count = sizeof(app_io_sequence) / sizeof(app_io_sequence[0]),
+};
+```
+
+示例工程中模拟的典型时序：  
+The example simulates a typical sequence:
+
+- `SLEEP`：先关主继电器，再关传感器 5V，最后让 CAN 进入 standby。  
+  `SLEEP`: turn off main relay, then sensor 5V, then put CAN into standby.
+- `WAKEUP`：先保持 MCU hold，再打开传感器 5V，最后释放 CAN standby。  
+  `WAKEUP`: assert MCU hold, enable sensor 5V, then release CAN standby.
+- `WORK`：保持传感器供电和 CAN normal，再延时打开主继电器。  
+  `WORK`: keep sensor supply and CAN normal, then enable main relay after a delay.
+- `SHUTDOWN_PREPARE`：先关主继电器，再让 CAN standby，最后关闭传感器 5V。  
+  `SHUTDOWN_PREPARE`: turn off main relay, put CAN into standby, then turn off sensor 5V.
+
+如果某个状态没有配置时序步骤，状态机会自动回退到原来的状态 IO 表。当前时序实现使用 `vTaskDelay()`，建议只用于短时序；长时序建议拆成非阻塞独立时序任务。  
+If no sequence steps are configured for a state, the manager falls back to the original state IO table. The current implementation uses `vTaskDelay()`, so it is suitable for short sequences; long sequences should be moved to a non-blocking dedicated sequence task.
+
 ## 状态同步 / State Sync
 
 注册 `PowerManager_RegisterStateSyncCallback()` 后，可以将当前电源快照同步给 CAN、诊断、共享内存或其它任务。  

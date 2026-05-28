@@ -16,6 +16,8 @@
   Forced sleep after `POWER_MANAGER_SHUTDOWN_FORCE_TIMEOUT_TICKS`.
 - 外设电源管理在 `WORK` 中 resume，在 `SLEEP` 中 suspend。  
   Peripheral PM resumes in `WORK` and suspends in `SLEEP`.
+- IO 时序表按步骤执行，并累计配置的延时。  
+  IO sequence table executes ordered steps and accumulates configured delays.
 
 ## 语法检查 / Syntax Check
 
